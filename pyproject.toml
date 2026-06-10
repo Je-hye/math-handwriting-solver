@@ -1,0 +1,23 @@
+[project]
+name = "math-handwriting-solver"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "Pillow>=10.4.0",
+    "pymupdf>=1.24.0",
+    "sympy>=1.13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.14.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["solver"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
