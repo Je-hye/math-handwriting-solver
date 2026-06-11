@@ -72,6 +72,10 @@ def generate_solution(
         for a in data.get("annotations", [])
     ]
 
+    # LLM이 y 좌표 제약을 무시하는 경우 post-processing으로 강제
+    min_y = int(problem.bbox.y + problem.bbox.height) + 20
+    annotations = _clamp_annotations_below(annotations, min_y, problem.image_height)
+
     verified, confidence = _verify_with_sympy(problem.text, data["final_answer"])
 
     # 보라색 개념 박스 없으면 confidence 하향
@@ -86,6 +90,31 @@ def generate_solution(
         confidence=confidence,
         verified=verified,
     )
+
+
+def _clamp_annotations_below(
+    annotations: list[Annotation],
+    min_y: int,
+    image_height: int,
+) -> list[Annotation]:
+    """모든 annotation의 y 좌표를 min_y 이상으로 강제한다.
+    LLM이 y 좌표 제약을 지키지 않을 때 post-processing으로 보정한다.
+    """
+    step = max(30, (image_height - min_y) // max(len(annotations), 1))
+    result = []
+    for i, ann in enumerate(annotations):
+        clamped_y = max(ann.position.y, min_y + i * step)
+        if ann.position.y >= min_y:
+            result.append(ann)
+        else:
+            result.append(Annotation(
+                type=ann.type,
+                content=ann.content,
+                position=Point(x=ann.position.x, y=clamped_y),
+                color=ann.color,
+                style=ann.style,
+            ))
+    return result
 
 
 def _verify_with_sympy(problem_text: str, final_answer: str) -> tuple[bool, float]:
