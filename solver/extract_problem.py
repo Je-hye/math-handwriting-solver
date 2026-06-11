@@ -25,6 +25,16 @@ _USER_TEMPLATE = """\
 """
 
 
+def _strip_md(text: str) -> str:
+    """```json ... ``` 마크다운 블록 제거."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+    return text.strip()
+
+
 def extract_problem(
     image: Image.Image,
     dpi: int,
@@ -72,7 +82,7 @@ def extract_problem(
         }],
     )
 
-    data = json.loads(response.content[0].text)
+    data = json.loads(_strip_md(response.content[0].text))
 
     figures = [
         Figure(type=f["type"], bbox=BoundingBox(**f["bbox"]))

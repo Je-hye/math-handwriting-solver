@@ -6,6 +6,16 @@ from .models import ProblemData, SolutionData, Annotation, Point, AnnotationStyl
 
 _SYSTEM = "수학 풀이를 JSON으로만 응답하는 어시스턴트."
 
+
+def _strip_md(text: str) -> str:
+    """```json ... ``` 마크다운 블록 제거."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+        if text.endswith("```"):
+            text = text.rsplit("```", 1)[0]
+    return text.strip()
+
 _USER_TEMPLATE = """\
 다음 수학 문제를 단계별로 풀어주세요. 아래 JSON 형식으로만 응답하세요:
 
@@ -58,7 +68,7 @@ def generate_solution(
         messages=[{"role": "user", "content": prompt}],
     )
 
-    data = json.loads(response.content[0].text)
+    data = json.loads(_strip_md(response.content[0].text))
 
     annotations = [
         Annotation(
