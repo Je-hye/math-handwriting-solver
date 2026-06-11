@@ -14,8 +14,8 @@ def save_output(
     src = Path(source_path)
     out = src.parent / f"{src.stem}_solved{src.suffix}"
 
-    assert out.resolve() != src.resolve(), \
-        f"Output {out} must not overwrite source {src}"
+    if out.resolve() == src.resolve():
+        raise ValueError(f"Output {out} must not overwrite source {src}")
 
     if original_format == ".pdf":
         _save_as_pdf(image, out, dpi)

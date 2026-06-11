@@ -5,6 +5,7 @@ import json
 import anthropic
 from PIL import Image
 from .models import ProblemData, BoundingBox, Figure
+from ._utils import strip_md_json
 
 _SYSTEM = "수학 문제 이미지를 분석해 JSON으로만 응답하는 어시스턴트."
 
@@ -23,16 +24,6 @@ _USER_TEMPLATE = """\
 모든 좌표는 72dpi 기준 픽셀입니다. figures가 없으면 빈 배열을 반환하세요.
 이미지 크기 (72dpi 기준): {width}×{height}px
 """
-
-
-def _strip_md(text: str) -> str:
-    """```json ... ``` 마크다운 블록 제거."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        if text.endswith("```"):
-            text = text.rsplit("```", 1)[0]
-    return text.strip()
 
 
 def extract_problem(
@@ -82,22 +73,19 @@ def extract_problem(
         }],
     )
 
-    data = json.loads(_strip_md(response.content[0].text))
+    data = json.loads(strip_md_json(response.content[0].text))
 
     figures = [
         Figure(type=f["type"], bbox=BoundingBox(**f["bbox"]))
         for f in data.get("figures", [])
     ]
 
-    orig_buf = io.BytesIO()
-    image.save(orig_buf, format="JPEG", quality=95)
-
     return ProblemData(
         text=data["text"],
         problem_type=data["problem_type"],
         figures=figures,
         bbox=BoundingBox(**data["bbox"]),
-        raw_image=orig_buf.getvalue(),
+        raw_image=buf.getvalue(),  # 72dpi 정규화 이미지 — image_width/height와 동일 크기
         image_width=w72,
         image_height=h72,
     )

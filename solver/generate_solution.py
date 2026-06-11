@@ -3,18 +3,9 @@ import json
 import re
 import anthropic
 from .models import ProblemData, SolutionData, Annotation, Point, AnnotationStyle
+from ._utils import strip_md_json
 
 _SYSTEM = "수학 풀이를 JSON으로만 응답하는 어시스턴트."
-
-
-def _strip_md(text: str) -> str:
-    """```json ... ``` 마크다운 블록 제거."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        if text.endswith("```"):
-            text = text.rsplit("```", 1)[0]
-    return text.strip()
 
 _USER_TEMPLATE = """\
 다음 수학 문제를 단계별로 풀어주세요. 아래 JSON 형식으로만 응답하세요:
@@ -68,7 +59,7 @@ def generate_solution(
         messages=[{"role": "user", "content": prompt}],
     )
 
-    data = json.loads(_strip_md(response.content[0].text))
+    data = json.loads(strip_md_json(response.content[0].text))
 
     annotations = [
         Annotation(
@@ -98,7 +89,12 @@ def generate_solution(
 
 
 def _verify_with_sympy(problem_text: str, final_answer: str) -> tuple[bool, float]:
-    """sympy로 최종 답을 파싱 검증. (verified, confidence)."""
+    """final_answer가 sympy로 파싱 가능한 수식인지 확인한다. (verified, confidence)
+
+    주의: 이 함수는 '답이 수학적으로 올바른지'를 검증하지 않는다.
+    RHS 표현식의 파싱 성공 여부만 확인하는 sanity check다.
+    파싱 성공 → (True, 0.85), 실패 → (False, 0.5).
+    """
     from sympy.parsing.sympy_parser import (
         parse_expr,
         standard_transformations,

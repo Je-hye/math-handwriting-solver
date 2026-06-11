@@ -45,7 +45,7 @@ class ProblemData:
     problem_type: Literal["equation", "graph", "geometry", "statistics"]
     figures: list[Figure]
     bbox: BoundingBox
-    raw_image: bytes        # 원본 이미지 bytes (JPEG)
+    raw_image: bytes        # 72dpi 정규화 이미지 bytes (JPEG) — image_width/height와 동일 크기
     image_width: int        # 72dpi 기준 픽셀 너비
     image_height: int       # 72dpi 기준 픽셀 높이
 
