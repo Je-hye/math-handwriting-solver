@@ -9,3 +9,4 @@ dist/
 *.egg-info/
 .agents/artifacts
 .agents/
+quality_gate_*.png
