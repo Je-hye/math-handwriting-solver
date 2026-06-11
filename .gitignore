@@ -1,1 +1,12 @@
 .worktrees/
+fonts/*.ttf
+fonts/*.otf
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+*.egg-info/
+.agents/artifacts
+.agents/
+quality_gate_*.png
