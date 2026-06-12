@@ -47,18 +47,11 @@ def make_output(input_img):
     font_pen_lg = ImageFont.truetype(PEN_FONT, 48)
     font_pen_concept = ImageFont.truetype(PEN_FONT, 24)
 
-    steps = [
-        ("2x + 3 = 7", ""),
-        ("2x = 7 - 3", "← 양변에서 3을 뺀다"),
-        ("2x = 4", ""),
-        ("x = 2", "← 양변을 2로 나눈다"),
-    ]
+    steps = ["2x + 3 = 7", "2x = 7 - 3", "2x = 4", "x = 2"]
 
     y = 290
-    for expr, note in steps:
+    for expr in steps:
         draw.text(jitter(140, y, 2), expr, font=font_pen, fill=BLUE)
-        if note:
-            draw.text(jitter(340, y + 4, 1), note, font=font_pen_note, fill=BLUE)
         y += 58
 
     # Green checkmark next to final answer
