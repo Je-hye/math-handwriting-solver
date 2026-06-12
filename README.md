@@ -80,6 +80,24 @@ Solved: problem_solved.jpg
 
 ---
 
+## Claude Code 스킬 설치
+
+Claude Code를 사용한다면 `/solve` 스킬을 설치해 대화 중에 바로 풀 수 있습니다.
+
+```bash
+# 스킬 파일을 Claude Code 스킬 디렉터리에 복사
+mkdir -p ~/.claude/skills/solve
+cp skills/solve/SKILL.md ~/.claude/skills/solve/SKILL.md
+```
+
+설치 후 Claude Code에서:
+
+```
+/solve problem.jpg
+```
+
+---
+
 ## 개발
 
 ```bash
