@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(security find-generic-password *)",
+      "Bash(claude agents *)",
+      "Bash(/opt/homebrew/bin/icalBuddy *)",
+      "mcp__claude_ai_Gmail__search_threads",
+      "mcp__claude_ai_Slack__slack_search_public_and_private",
+      "mcp__claude_ai_Slack__slack_search_channels"
+    ]
+  }
+}

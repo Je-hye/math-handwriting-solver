@@ -1,13 +1,29 @@
 [project]
 name = "math-handwriting-solver"
 version = "0.1.0"
+description = "수학 문제 사진/PDF → 손글씨 풀이 오버레이 생성기"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
+keywords = ["math", "handwriting", "claude", "vision", "annotation"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "anthropic>=0.40.0",
     "Pillow>=10.4.0",
     "pymupdf>=1.24.0",
     "sympy>=1.13",
 ]
+
+[project.scripts]
+math-solver = "solver.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/Je-hye/math-handwriting-solver"
+Issues = "https://github.com/Je-hye/math-handwriting-solver/issues"
 
 [project.optional-dependencies]
 dev = [
