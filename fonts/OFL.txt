@@ -1,0 +1,10 @@
+SIL OPEN FONT LICENSE Version 1.1
+
+Nanum fonts are Copyright (c) Naver Corporation.
+Licensed under the SIL Open Font License, Version 1.1.
+
+These fonts are bundled for offline use. The original fonts are available at:
+- https://fonts.google.com/specimen/Nanum+Pen+Script
+- https://fonts.google.com/specimen/Nanum+Gothic
+
+Full license text: https://scripts.sil.org/OFL
