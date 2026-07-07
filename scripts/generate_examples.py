@@ -1,52 +1,80 @@
-"""Generate example images that mimic an exam sheet with handwritten solution overlay."""
-from pathlib import Path
+"""
+Generate example images: render exam PDF page, then overlay handwritten solution.
+Usage: python scripts/generate_examples.py [path/to/exam.pdf]
+"""
+import sys
+import math
 import re
 import random
+from pathlib import Path
+import fitz
 from PIL import Image, ImageDraw, ImageFont
 
-REPO = Path(__file__).parent.parent
+REPO      = Path(__file__).parent.parent
 FONTS_DIR = REPO / "fonts"
-OUT_DIR = REPO / "docs" / "examples"
+OUT_DIR   = REPO / "docs" / "examples"
+PEN       = str(FONTS_DIR / "NanumPenScript-Regular.ttf")
 
-PEN   = str(FONTS_DIR / "NanumPenScript-Regular.ttf")
-GOTHIC = str(FONTS_DIR / "NanumGothic-Regular.ttf")
+DEFAULT_PDF = Path("/Users/User/Downloads/[중][2025][3-1-기][수성구][황금중][비상][이차방정식의풀이-이차함수의활용] (작업).pdf")
 
-W, H = 820, 980
-BG         = (252, 252, 248)
-BLACK      = (20, 20, 20)
-GRAY       = (150, 150, 150)
-LIGHT_GRAY = (210, 210, 210)
+# Render DPI
+DPI   = 150
+SCALE = DPI / 72  # 2.0833
 
+# Original color scheme
 BLUE   = (30, 100, 200)
 RED    = (200, 40, 40)
 GREEN  = (40, 160, 40)
 ORANGE = (210, 110, 20)
 PURPLE = (120, 40, 180)
+BLACK  = (20, 20, 20)
 
 HL_YELLOW = (255, 240, 0, 90)
 HL_GREEN  = (120, 255, 120, 80)
 
+
+# ── helpers ──────────────────────────────────────────────────────────────────
 
 def jit(x, y, amt=2):
     return x + random.randint(-amt, amt), y + random.randint(-amt, amt)
 
 
 def highlight(img, x1, y1, x2, y2, color):
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(overlay).rectangle([x1, y1, x2, y2], fill=color)
+    ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(ov).rectangle([x1, y1, x2, y2], fill=color)
     base = img.convert("RGBA")
-    base.alpha_composite(overlay)
+    base.alpha_composite(ov)
     return base.convert("RGB")
 
 
+def hand_circle(draw, cx, cy, rx, ry, color, width=2):
+    """Draw a wobbly, hand-drawn-looking ellipse."""
+    N = 80
+    pts = []
+    # random low-frequency wobble phases (roughjs-style bezier perturbation)
+    phase_x = random.uniform(0, 2 * math.pi)
+    phase_y = random.uniform(0, 2 * math.pi)
+    start   = random.uniform(-0.15, 0.15)   # random entry angle
+    for i in range(N + 10):                 # overdraw 10pts for natural closure
+        t = start + 2 * math.pi * i / N
+        wobble_x = rx * 0.10 * math.sin(3 * t + phase_x)
+        wobble_y = ry * 0.10 * math.cos(2 * t + phase_y)
+        rr_x = rx + wobble_x + random.gauss(0, rx * 0.06)
+        rr_y = ry + wobble_y + random.gauss(0, ry * 0.06)
+        x = cx + rr_x * math.cos(t) + random.gauss(0, 1.8)
+        y = cy + rr_y * math.sin(t) + random.gauss(0, 1.8)
+        pts.append((int(x), int(y)))
+    draw.line(pts, fill=color, width=width)
+
+
 def draw_math(draw, x, y, text, font, sup_font, fill):
-    """Draw math text; ^ marks superscript. No per-token jitter — call jit() before this."""
-    sup_offset = int(font.size * 0.40)
-    cursor = x
+    """Render text; ^ prefix = superscript at smaller size and raised position."""
+    sup_rise = int(font.size * 0.40)
+    cursor = float(x)
     for tok in re.split(r'(\^[0-9a-zA-Z]+)', text):
         if tok.startswith('^'):
             sup = tok[1:]
-            draw.text((int(cursor), y - sup_offset), sup, font=sup_font, fill=fill)
+            draw.text((int(cursor), y - sup_rise), sup, font=sup_font, fill=fill)
             cursor += draw.textlength(sup, font=sup_font) + 1
         else:
             draw.text((int(cursor), y), tok, font=font, fill=fill)
@@ -54,125 +82,124 @@ def draw_math(draw, x, y, text, font, sup_font, fill):
     return int(cursor)
 
 
-def draw_choice(draw, x, y, n, label, font, fill):
-    """Draw a circled number + label. Returns x after the item."""
-    text = str(n)
-    tw = int(draw.textlength(text, font=font))
-    th = font.size
-    r  = max(tw, th) // 2 + 4
-    cx, cy = x + r, y + th // 2
-    draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=fill, width=1)
-    draw.text((cx - tw // 2, y), text, font=font, fill=fill)
-    lx = x + 2 * r + 4
-    draw.text((lx, y), " " + label, font=font, fill=fill)
-    return lx + int(draw.textlength(" " + label, font=font))
+# ── main steps ────────────────────────────────────────────────────────────────
+
+def pdf_to_image(pdf_path, page_num=0):
+    doc = fitz.open(str(pdf_path))
+    page = doc[page_num]
+    mat = fitz.Matrix(SCALE, SCALE)
+    pix = page.get_pixmap(matrix=mat)
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    doc.close()
+    return img
 
 
-# ────────────────────────────────────────────────────────────
-def make_input():
-    img  = Image.new("RGB", (W, H), BG)
+def overlay_solution(base):
+    """Overlay handwritten solution for problem #2 on the rendered page."""
+    # Pixel positions extracted from PDF text layout at 150 DPI:
+    # ④ answer choice: (762, 390)–(804, 413)  → center (783, 401)
+    # Right column starts at x≈762, question at y≈178
+    # [난이도] 하 ends at y≈479  → solution area starts below here
+
+    # ── Yellow highlight on the equation in problem 2 ──────────────────────
+    img = highlight(base, 875, 174, 1070, 210, HL_YELLOW)
     draw = ImageDraw.Draw(img)
 
-    g_sm  = ImageFont.truetype(GOTHIC, 14)
-    g_md  = ImageFont.truetype(GOTHIC, 17)
-    g_lg  = ImageFont.truetype(GOTHIC, 19)
-    g_q   = ImageFont.truetype(GOTHIC, 16)
-    g_sup = ImageFont.truetype(GOTHIC, 11)
+    # Fonts — sized for 150 DPI page
+    FS      = 26
+    pen     = ImageFont.truetype(PEN, FS)
+    pen_sup = ImageFont.truetype(PEN, int(FS * 0.60))
+    pen_sm  = ImageFont.truetype(PEN, int(FS * 0.78))
+    pen_hd  = ImageFont.truetype(PEN, int(FS * 1.1))
 
-    # ── Header ──────────────────────────────────────────────
-    draw.rectangle([0, 0, W, 52], fill=(235, 235, 235))
-    draw.line([(0, 52), (W, 52)], fill=LIGHT_GRAY, width=1)
-    draw.text((22, 16), "2025년 1학기 내신 기출", font=g_md, fill=BLACK)
-    draw.text((W - 230, 16), "이차방정식의 풀이", font=g_md, fill=BLACK)
+    LH  = int(FS * 1.70)   # line height
+    SOL_X = 775             # x-start of solution
+    y = 1250                # y-start: blank area below teacher's printed solution (~y≈1130)
 
-    # ── Question ────────────────────────────────────────────
-    draw.text((22, 68), "1.", font=g_lg, fill=BLACK)
-    # Measure prefix to know where the equation starts for highlighter
-    prefix   = "이차방정식  "
-    eq_str   = "x^2 - 3x - 10 = 0"
-    suffix   = "  의 두 근 중 큰 값은?  [3점]"
-    hl_x1    = 46 + int(draw.textlength(prefix, font=g_q)) - 2
-    hl_x2    = hl_x1 + int(draw.textlength(
-                   re.sub(r'\^[0-9a-zA-Z]+', '', eq_str), font=g_q)) + 14
-    qx = draw_math(draw, 46, 68, prefix + eq_str + suffix, g_q, g_sup, BLACK)
+    # ── #2 header ──────────────────────────────────────────────────────────
+    draw.text(jit(750, y - 40, 2), "#2", font=pen_hd, fill=BLACK)
 
-    # ── Answer choices (circled numbers drawn manually) ─────
-    CHOICE_Y = 112
-    choices  = [("-5", 46), ("-2", 190), ("2", 334), ("5", 470), ("7", 610)]
-    for i, (label, cx) in enumerate(choices, 1):
-        draw_choice(draw, cx, CHOICE_Y, i, label, g_q, BLACK)
+    # glyph metrics: NanumPenScript FS=26 → actual glyph top=2, bottom=22 (height 20px)
+    GLYPH_H  = 20
+    SM_H     = 16   # pen_sm (size 20) glyph height
+    HINT_GAP = 10   # gap between equation bottom and first hint line
 
-    # ── Tags ────────────────────────────────────────────────
-    draw.text((46, 152), "[중단원] 이차방정식의 풀이", font=g_sm, fill=GRAY)
-    draw.text((46, 170), "[난이도] 하",               font=g_sm, fill=GRAY)
+    # ── Equation 1: x^2 + 9x - 22 = 0 ────────────────────────────────────
+    draw_math(draw, *jit(SOL_X, y, 2), "x^2 + 9x - 22 = 0", pen, pen_sup, BLUE)
+    # Factoring hint (orange): clearly below the equation
+    h_y = y + GLYPH_H + HINT_GAP
+    draw.text(jit(SOL_X + 22, h_y, 1),                   "11", font=pen_sm, fill=ORANGE)
+    draw.text(jit(SOL_X + 22, h_y + SM_H + 4, 1),        "-2", font=pen_sm, fill=ORANGE)
 
-    draw.line([(22, 198), (W - 22, 198)], fill=LIGHT_GRAY, width=1)
-    draw.text((22, 210), "[풀이]", font=g_sm, fill=GRAY)
+    y += int(LH * 2.0)   # room for two hint lines
+    draw_math(draw, *jit(SOL_X, y, 2), "(x - 2)(x + 11) = 0", pen, pen_sup, BLUE)
 
-    return img, hl_x1, hl_x2
+    y += LH
+    draw_math(draw, *jit(SOL_X, y, 2), "x = 2  or  x = -11", pen, pen_sup, BLUE)
 
-
-def make_output(input_img, hl_x1, hl_x2):
-    # ── Highlights ──────────────────────────────────────────
-    # Yellow: key equation in the question (position computed dynamically)
-    img = highlight(input_img, hl_x1, 60, hl_x2, 86, HL_YELLOW)
-    # Green: final answer line (y pre-computed below = 438)
-    img = highlight(img, 42, 430, 450, 462, HL_GREEN)
-
+    y += LH
+    # Green highlight only on the answer value "a = 2"
+    prefix1_w = int(draw.textlength(".. 큰 수  ", font=pen))
+    ans1_val_w = pen.getbbox("a = 2")[2]
+    img = highlight(img, SOL_X + prefix1_w - 2, y - 1,
+                    SOL_X + prefix1_w + ans1_val_w + 6, y + GLYPH_H + 3, HL_GREEN)
     draw = ImageDraw.Draw(img)
+    draw_math(draw, *jit(SOL_X, y, 2), ".. 큰 수  a = 2", pen, pen_sup, BLUE)
 
-    pen     = ImageFont.truetype(PEN, 38)
-    pen_hd  = ImageFont.truetype(PEN, 32)
-    pen_sm  = ImageFont.truetype(PEN, 27)
-    pen_sup = ImageFont.truetype(PEN, 24)
+    # ── Equation 2: 2x^2 + 5x - 3 = 0 ────────────────────────────────────
+    y += int(LH * 1.5)
+    draw_math(draw, *jit(SOL_X, y, 2), "2x^2 + 5x - 3 = 0", pen, pen_sup, BLUE)
+    # Factoring grid (orange): clearly below the equation
+    h_y = y + GLYPH_H + HINT_GAP
+    draw.text(jit(SOL_X + 22, h_y, 1),                   "2   -1", font=pen_sm, fill=ORANGE)
+    draw.text(jit(SOL_X + 22, h_y + SM_H + 4, 1),        "1    3", font=pen_sm, fill=ORANGE)
 
-    g_q   = ImageFont.truetype(GOTHIC, 16)   # reused for circle re-draw
+    y += int(LH * 2.0)   # room for two hint lines
+    draw_math(draw, *jit(SOL_X, y, 2), "(2x - 1)(x + 3) = 0", pen, pen_sup, BLUE)
 
-    # ── Solution header ─────────────────────────────────────
-    draw.text(jit(22, 212, 1), "#풀이", font=pen_hd, fill=BLACK)
+    y += LH
+    draw_math(draw, *jit(SOL_X, y, 2), "x = 1/2  or  x = -3", pen, pen_sup, BLUE)
 
-    # ── Step 1 ──────────────────────────────────────────────
-    sx, sy = jit(60, 264, 2)
-    eq_end = draw_math(draw, sx, sy, "x^2 - 3x - 10 = 0", pen, pen_sup, BLUE)
+    y += LH
+    # Green highlight only on the answer value "b = -3"
+    prefix2_w = int(draw.textlength(".. 작은 수  ", font=pen))
+    ans2_val_w = pen.getbbox("b = -3")[2]
+    img = highlight(img, SOL_X + prefix2_w - 2, y - 1,
+                    SOL_X + prefix2_w + ans2_val_w + 6, y + GLYPH_H + 3, HL_GREEN)
+    draw = ImageDraw.Draw(img)
+    draw_math(draw, *jit(SOL_X, y, 2), ".. 작은 수  b = -3", pen, pen_sup, BLUE)
 
-    # Orange factoring hint: right of equation
-    hx = eq_end + 20
-    draw.text((hx,      sy - 2), "-5", font=pen_sm, fill=ORANGE)
-    draw.text((hx, sy + 28),     "+2", font=pen_sm, fill=ORANGE)
+    # ── Final answer ────────────────────────────────────────────────────────
+    y += int(LH * 1.5)
+    draw_math(draw, *jit(SOL_X, y, 2), ".. a - b = 2 - (-3) = 5", pen, pen_sup, BLUE)
+    # Green checkmark
+    ck_x, ck_y = SOL_X - 22, y + int(FS * 0.5)
+    draw.line([(ck_x, ck_y), (ck_x + 7, ck_y + 9)],  fill=GREEN, width=2)
+    draw.line([(ck_x + 7, ck_y + 9), (ck_x + 19, ck_y - 6)], fill=GREEN, width=2)
 
-    # ── Step 2 ──────────────────────────────────────────────
-    draw_math(draw, *jit(60, 324, 2), "(x + 2)(x - 5) = 0", pen, pen_sup, BLUE)
+    # ── Hand-drawn red circle on ④ 5 ──────────────────────────────────────
+    # ④ is at pixel (762, 390)–(804, 413); the "5" follows at ~(793, 391)–(804, 413)
+    # Circle the whole "④ 5" area
+    hand_circle(draw, cx=797, cy=401, rx=36, ry=17, color=RED, width=2)
 
-    # ── Step 3 ──────────────────────────────────────────────
-    draw_math(draw, *jit(60, 384, 2), "x = -2  or  x = 5", pen, pen_sup, BLUE)
+    # ── Purple concept box ─────────────────────────────────────────────────
+    PAD   = 14
+    box_x1 = 750
+    box_y1 = y + int(LH * 1.3)
+    box_x2 = 1490
+    box_y2 = box_y1 + int(FS * 4.8)
+    draw.rectangle([box_x1, box_y1, box_x2, box_y2], outline=PURPLE, width=2)
 
-    # ── Final answer ────────────────────────────────────────
-    draw_math(draw, *jit(60, 438, 2), "..  큰 값  a = 5", pen, pen_sup, BLUE)
+    pen_cb  = ImageFont.truetype(PEN, int(FS * 0.88))
+    pen_cbs = ImageFont.truetype(PEN, int(FS * 0.60))
 
-    # Green checkmark (two lines)
-    draw.line([(30, 450), (40, 462)], fill=GREEN, width=3)
-    draw.line([(40, 462), (56, 442)], fill=GREEN, width=3)
-
-    # ── Red circle on answer choice ④ 5 ─────────────────────
-    # Choice ④ is at x=470. The circle in draw_choice has r≈12, center at 470+12=482
-    ax, ay = 484, 120
-    draw.ellipse([ax - 20, ay - 16, ax + 20, ay + 16], outline=RED, width=3)
-
-    # ── Purple concept box (padding: 16px inside) ───────────
-    pen_cs  = ImageFont.truetype(PEN, 24)
-    pen_css = ImageFont.truetype(PEN, 17)
-    PAD   = 16
-    box_y = 510
-    box_h = 110
-    draw.rectangle([22, box_y, W - 22, box_y + box_h], outline=PURPLE, width=2)
-    draw.text(jit(22 + PAD, box_y + PAD, 1),
-              "[ 핵심 개념 ]", font=pen_cs, fill=PURPLE)
-    draw_math(draw, *jit(22 + PAD, box_y + PAD + 34, 1),
-              "x^2 + bx + c = 0 의 인수분해 : 합이 b, 곱이 c 인 두 수 p, q 로 (x+p)(x+q) = 0",
-              pen_cs, pen_css, PURPLE)
-    draw_math(draw, *jit(22 + PAD, box_y + PAD + 68, 1),
+    draw.text(jit(box_x1 + PAD, box_y1 + PAD, 1), "[ 핵심 개념 ]", font=pen_cb, fill=PURPLE)
+    draw_math(draw, box_x1 + PAD, box_y1 + PAD + int(FS * 1.3),
+              "이차방정식 ax^2 + bx + c = 0 의 인수분해 : 두 수 p, q 로 a(x+p)(x+q) = 0",
+              pen_cb, pen_cbs, PURPLE)
+    draw_math(draw, box_x1 + PAD, box_y1 + PAD + int(FS * 2.6),
               "두 근의 합 : -b/a,   두 근의 곱 : c/a   (근과 계수의 관계)",
-              pen_cs, pen_css, PURPLE)
+              pen_cb, pen_cbs, PURPLE)
 
     return img
 
@@ -181,11 +208,16 @@ def main():
     random.seed(42)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    inp, hl_x1, hl_x2 = make_input()
+    pdf_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PDF
+    if not pdf_path.exists():
+        print(f"PDF not found: {pdf_path}")
+        return
+
+    inp = pdf_to_image(pdf_path, page_num=0)
     inp.save(OUT_DIR / "input.png")
     print(f"Saved {OUT_DIR / 'input.png'}")
 
-    out = make_output(inp, hl_x1, hl_x2)
+    out = overlay_solution(inp)
     out.save(OUT_DIR / "output.png")
     print(f"Saved {OUT_DIR / 'output.png'}")
 
