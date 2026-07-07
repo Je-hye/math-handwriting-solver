@@ -1,6 +1,5 @@
 .worktrees/
-fonts/*.ttf
-fonts/*.otf
+.superpowers/
 .env
 __pycache__/
 *.pyc
